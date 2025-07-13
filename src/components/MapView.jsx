@@ -12,6 +12,36 @@ const MapView = ({ onMotionDetected }) => {
   const markerRef = useRef(null);
   const [userLocation, setUserLocation] = useState(null);
   const hasCentered = useRef(false);
+  const pathSegmentsRef = useRef([]);
+  const lastCoordRef = useRef(null);
+  const lastJerkRef = useRef(0);
+
+  const getColorFromJerk = (jerk) => {
+    if (jerk > 20) return "#ff0000";
+    if (jerk > 10) return "#ffa500";
+    return "#00ff00";
+  };
+
+  const updatePathLayer = () => {
+    const geojson = {
+      type: "FeatureCollection",
+      features: pathSegmentsRef.current.map((segment) => ({
+        type: "Feature",
+        geometry: {
+          type: "LineString",
+          coordinates: segment.coords,
+        },
+        properties: {
+          color: segment.color,
+        },
+      })),
+    };
+
+    const source = mapRef.current.getSource("jerk-path");
+    if (source) {
+      source.setData(geojson);
+    }
+  };
 
   useEffect(() => {
     const map = new mapboxgl.Map({
@@ -58,6 +88,28 @@ const MapView = ({ onMotionDetected }) => {
         },
         labelLayerId
       );
+
+      map.addSource("jerk-path", {
+        type: "geojson",
+        data: {
+          type: "FeatureCollection",
+          features: [],
+        },
+      });
+
+      map.addLayer({
+        id: "jerk-colored-line",
+        type: "line",
+        source: "jerk-path",
+        layout: {
+          "line-join": "round",
+          "line-cap": "round",
+        },
+        paint: {
+          "line-color": ["get", "color"],
+          "line-width": 4,
+        },
+      });
     });
 
     return () => map.remove();
@@ -65,13 +117,14 @@ const MapView = ({ onMotionDetected }) => {
 
   useEffect(() => {
     const handleMotion = (event) => {
-      const { acceleration, rotationRate } = event;
+      const { acceleration } = event;
       const totalAccel = Math.sqrt(
         (acceleration.x || 0) ** 2 +
           (acceleration.y || 0) ** 2 +
           (acceleration.z || 0) ** 2
       );
       const jerkLevel = totalAccel;
+      lastJerkRef.current = jerkLevel;
       onMotionDetected?.({ jerkLevel, totalAccel });
     };
 
@@ -102,6 +155,16 @@ const MapView = ({ onMotionDetected }) => {
           mapRef.current.flyTo({ center: newPos, speed: 1.5 });
           hasCentered.current = true;
         }
+
+        const last = lastCoordRef.current;
+        if (last && (last[0] !== newPos[0] || last[1] !== newPos[1])) {
+          pathSegmentsRef.current.push({
+            coords: [last, newPos],
+            color: getColorFromJerk(lastJerkRef.current),
+          });
+          updatePathLayer();
+        }
+        lastCoordRef.current = newPos;
       },
       (err) => console.error(err),
       { enableHighAccuracy: true, maximumAge: 0, timeout: 5000 }
