@@ -13,7 +13,8 @@
   width: 100%;
 }
 
-.recenter-btn {
+.recenter-btn,
+.record-btn {
   position: absolute;
   bottom: 80px;
   right: 12px;
@@ -25,4 +26,8 @@
   font-size: 18px;
   z-index: 10;
   box-shadow: 0 0 5px rgba(0, 0, 0, 0.3);
+}
+
+.record-btn {
+  bottom: 140px;
 }

@@ -1,10 +1,22 @@
 import React, { useRef, useEffect, useState } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
-import { FaCrosshairs } from "react-icons/fa";
+import { FaCrosshairs, FaPlay, FaStop } from "react-icons/fa";
+import { toast } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
 import "../styles/Map.css";
 
 mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN;
+
+const downloadJSON = (data, filename = "session.json") => {
+  const blob = new Blob([JSON.stringify(data, null, 2)], {
+    type: "application/json",
+  });
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = filename;
+  link.click();
+};
 
 const MapView = ({ onMotionDetected }) => {
   const mapContainer = useRef(null);
@@ -16,6 +28,8 @@ const MapView = ({ onMotionDetected }) => {
   const lastCoordRef = useRef(null);
   const lastJerkRef = useRef(0);
   const accelTriggered = useRef(false);
+  const [recording, setRecording] = useState(false);
+  const recordedSession = useRef([]);
 
   const getColorFromJerk = (jerk) => {
     if (jerk > 20) return "#ff0000";
@@ -143,8 +157,6 @@ const MapView = ({ onMotionDetected }) => {
   }, []);
 
   useEffect(() => {
-    let watchId;
-
     const pollGPSOnce = () => {
       navigator.geolocation.getCurrentPosition(
         ({ coords }) => {
@@ -167,11 +179,20 @@ const MapView = ({ onMotionDetected }) => {
 
           const last = lastCoordRef.current;
           if (last && (last[0] !== newPos[0] || last[1] !== newPos[1])) {
-            pathSegmentsRef.current.push({
+            const segment = {
               coords: [last, newPos],
               color: getColorFromJerk(lastJerkRef.current),
-            });
+            };
+            pathSegmentsRef.current.push(segment);
             updatePathLayer();
+
+            if (recording) {
+              recordedSession.current.push({
+                ...segment,
+                jerk: lastJerkRef.current,
+                timestamp: Date.now(),
+              });
+            }
           }
           lastCoordRef.current = newPos;
         },
@@ -187,11 +208,8 @@ const MapView = ({ onMotionDetected }) => {
       }
     }, 1000);
 
-    return () => {
-      clearInterval(interval);
-      if (watchId) navigator.geolocation.clearWatch(watchId);
-    };
-  }, []);
+    return () => clearInterval(interval);
+  }, [recording]);
 
   const recenter = () => {
     if (userLocation) {
@@ -204,6 +222,39 @@ const MapView = ({ onMotionDetected }) => {
     }
   };
 
+  const toggleRecording = () => {
+    if (!recording) {
+      toast.info("Recording session started", {
+        position: "top-left",
+        autoClose: 1500,
+        hideProgressBar: true,
+        closeOnClick: true,
+        pauseOnHover: false,
+        draggable: false,
+        theme: "dark",
+        style: { marginTop: "80px" },
+      });
+      recordedSession.current = [];
+    } else {
+      toast.success("Recording stopped. Check console.", {
+        position: "top-left",
+        autoClose: 1500,
+        hideProgressBar: true,
+        closeOnClick: true,
+        pauseOnHover: false,
+        draggable: false,
+        theme: "dark",
+        style: { marginTop: "80px" },
+      });
+      downloadJSON(recordedSession.current);
+      console.log(
+        "Recorded Session JSON:",
+        JSON.stringify(recordedSession.current, null, 2)
+      );
+    }
+    setRecording(!recording);
+  };
+
   return (
     <div className="map-container-wrapper">
       <div ref={mapContainer} className="map-container"></div>
@@ -213,6 +264,13 @@ const MapView = ({ onMotionDetected }) => {
         title="Center to my location"
       >
         <FaCrosshairs />
+      </button>
+      <button
+        className="record-btn"
+        onClick={toggleRecording}
+        title="Toggle recording"
+      >
+        {recording ? <FaStop /> : <FaPlay />}
       </button>
     </div>
   );
