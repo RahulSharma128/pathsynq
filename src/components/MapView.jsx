@@ -15,6 +15,7 @@ const MapView = ({ onMotionDetected }) => {
   const pathSegmentsRef = useRef([]);
   const lastCoordRef = useRef(null);
   const lastJerkRef = useRef(0);
+  const accelTriggered = useRef(false);
 
   const getColorFromJerk = (jerk) => {
     if (jerk > 20) return "#ff0000";
@@ -125,6 +126,11 @@ const MapView = ({ onMotionDetected }) => {
       );
       const jerkLevel = totalAccel;
       lastJerkRef.current = jerkLevel;
+
+      if (jerkLevel > 2.5) {
+        accelTriggered.current = true;
+      }
+
       onMotionDetected?.({ jerkLevel, totalAccel });
     };
 
@@ -137,40 +143,54 @@ const MapView = ({ onMotionDetected }) => {
   }, []);
 
   useEffect(() => {
-    const watchId = navigator.geolocation.watchPosition(
-      ({ coords }) => {
-        const { latitude, longitude } = coords;
-        const newPos = [longitude, latitude];
-        setUserLocation({ latitude, longitude });
+    let watchId;
 
-        if (markerRef.current) {
-          markerRef.current.setLngLat(newPos);
-        } else {
-          markerRef.current = new mapboxgl.Marker({ color: "#1E90FF" })
-            .setLngLat(newPos)
-            .addTo(mapRef.current);
-        }
+    const pollGPSOnce = () => {
+      navigator.geolocation.getCurrentPosition(
+        ({ coords }) => {
+          const { latitude, longitude } = coords;
+          const newPos = [longitude, latitude];
+          setUserLocation({ latitude, longitude });
 
-        if (!hasCentered.current) {
-          mapRef.current.flyTo({ center: newPos, speed: 1.5 });
-          hasCentered.current = true;
-        }
+          if (markerRef.current) {
+            markerRef.current.setLngLat(newPos);
+          } else {
+            markerRef.current = new mapboxgl.Marker({ color: "#1E90FF" })
+              .setLngLat(newPos)
+              .addTo(mapRef.current);
+          }
 
-        const last = lastCoordRef.current;
-        if (last && (last[0] !== newPos[0] || last[1] !== newPos[1])) {
-          pathSegmentsRef.current.push({
-            coords: [last, newPos],
-            color: getColorFromJerk(lastJerkRef.current),
-          });
-          updatePathLayer();
-        }
-        lastCoordRef.current = newPos;
-      },
-      (err) => console.error(err),
-      { enableHighAccuracy: true, maximumAge: 0, timeout: 5000 }
-    );
+          if (!hasCentered.current) {
+            mapRef.current.flyTo({ center: newPos, speed: 1.5 });
+            hasCentered.current = true;
+          }
 
-    return () => navigator.geolocation.clearWatch(watchId);
+          const last = lastCoordRef.current;
+          if (last && (last[0] !== newPos[0] || last[1] !== newPos[1])) {
+            pathSegmentsRef.current.push({
+              coords: [last, newPos],
+              color: getColorFromJerk(lastJerkRef.current),
+            });
+            updatePathLayer();
+          }
+          lastCoordRef.current = newPos;
+        },
+        (err) => console.error(err),
+        { enableHighAccuracy: true, maximumAge: 0, timeout: 5000 }
+      );
+    };
+
+    const interval = setInterval(() => {
+      if (accelTriggered.current) {
+        accelTriggered.current = false;
+        pollGPSOnce();
+      }
+    }, 1000);
+
+    return () => {
+      clearInterval(interval);
+      if (watchId) navigator.geolocation.clearWatch(watchId);
+    };
   }, []);
 
   const recenter = () => {
