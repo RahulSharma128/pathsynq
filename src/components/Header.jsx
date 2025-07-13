@@ -1,19 +1,59 @@
-import React, { useEffect, useState } from "react";
-import { FaRoad, FaTachometerAlt, FaCogs, FaArrowsAltV } from "react-icons/fa";
+import React, { useContext, useEffect, useState } from "react";
+import { toast, ToastContainer } from "react-toastify";
+import {
+  FaTachometerAlt,
+  FaCompressArrowsAlt,
+  FaArrowsAltV,
+  FaRoad,
+} from "react-icons/fa";
+import { MotionContext } from "../context/MotionContext";
+import "react-toastify/dist/ReactToastify.css";
 import "../styles/Header.css";
 
 const Header = () => {
-  const [accZ, setAccZ] = useState(0);
+  const { motion } = useContext(MotionContext);
+  const [lastToast, setLastToast] = useState("");
+  const [jerk, setJerk] = useState(0);
+  const [accel, setAccel] = useState(0);
   const [gyroZ, setGyroZ] = useState(0);
   const [speed, setSpeed] = useState(0);
   const [distance, setDistance] = useState(0);
-
   const [prevCoords, setPrevCoords] = useState(null);
 
-  // Accelerometer & Gyroscope
+  useEffect(() => {
+    if (!motion) return;
+
+    const { jerkLevel, totalAccel } = motion;
+    setJerk(jerkLevel.toFixed(2));
+    setAccel(totalAccel.toFixed(2));
+
+    let message = "";
+
+    if (jerkLevel > 20) message = "🚨 High Jerk Detected";
+    else if (totalAccel > 25) message = "🚀 High Acceleration";
+    else if (jerkLevel > 10) message = "⚠️ Medium Jerk Detected";
+    else if (totalAccel > 15) message = "⚡ Medium Acceleration";
+    else if (jerkLevel > 5) message = "🟡 Low Jerk Detected";
+    else if (totalAccel > 8) message = "🔋 Low Acceleration";
+
+    if (message && message !== lastToast) {
+      toast.dismiss();
+      toast(message, {
+        position: "top-left",
+        autoClose: 1500,
+        hideProgressBar: true,
+        closeOnClick: true,
+        pauseOnHover: false,
+        draggable: false,
+        theme: "dark",
+        style: { marginTop: "80px" },
+      });
+      setLastToast(message);
+    }
+  }, [motion]);
+
   useEffect(() => {
     const handleMotion = (event) => {
-      setAccZ(event.acceleration?.z?.toFixed(2) || 0);
       setGyroZ(event.rotationRate?.alpha?.toFixed(2) || 0);
     };
 
@@ -26,7 +66,6 @@ const Header = () => {
     };
   }, []);
 
-  // GPS Speed & Distance
   useEffect(() => {
     const success = (pos) => {
       const coords = pos.coords;
@@ -39,7 +78,10 @@ const Header = () => {
           coords.latitude,
           coords.longitude
         );
-        setDistance((prev) => prev + d * 1000); // meters
+        // Only count distance if more than 5 meters (to avoid GPS noise)
+        if (d * 1000 > 5) {
+          setDistance((prev) => prev + d * 1000); // meters
+        }
       }
 
       setPrevCoords(coords);
@@ -77,10 +119,10 @@ const Header = () => {
       <div className="brand">Pathsynq</div>
       <div className="sensor-grid">
         <div className="sensor-item">
-          <FaArrowsAltV /> {accZ}
+          <FaArrowsAltV /> {jerk}
         </div>
         <div className="sensor-item">
-          <FaCogs /> {gyroZ}
+          <FaCompressArrowsAlt /> {gyroZ}
         </div>
         <div className="sensor-item">
           <FaTachometerAlt /> {speed} km/h
@@ -89,6 +131,7 @@ const Header = () => {
           <FaRoad /> {distance.toFixed(0)} m
         </div>
       </div>
+      <ToastContainer limit={1} />
     </header>
   );
 };
